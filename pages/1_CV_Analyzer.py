@@ -10,6 +10,12 @@ from utils.db import supabase, search_knowledge_base
 
 st.set_page_config(page_title="CV Auditor", layout="wide")
 
+if not st.session_state.get("cv_text"):
+    st.warning("No CV found. Please go to the Home page and upload your resume.")
+    if st.button("Go to Home"):
+        st.switch_page("app.py")
+    st.stop()
+
 # Custom CSS для карточек (чтобы выглядели современно)
 st.markdown("""
 <style>
@@ -26,36 +32,27 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-#if st.button("← Back to Home"):
- #   st.switch_page("app.py")
+if st.button("← back to main"):
+    st.switch_page("app.py")
 
-st.title("📄 Professional CV Audit")
-uploaded_file = st.file_uploader("Upload CV (PDF)", type="pdf")
+st.title("analyze cv")
+st.write(f"analysis for: **{st.session_state.detected_job}**")
 
-if uploaded_file:
-    with st.spinner("Processing..."):
-        cv_text = extract_text_from_pdf(uploaded_file)
+cv_text = st.session_state.cv_text
     
-    if cv_text:
-        if st.button("Run Deep Audit", type="primary"):
-            with st.spinner("Recruiter AI is reviewing your application..."):
+if cv_text:
+    if st.button("analyze cv"):
+        with st.spinner("Recruiter AI is reviewing your application..."):
                 
-                # 1. Поиск в базе знаний (RAG)
-                cv_vector = get_embedding(cv_text[:1000])
-                best_practices = search_knowledge_base('match_cv_best_practices', cv_vector)
+            cv_vector = get_embedding(cv_text[:1000])
+            best_practices = search_knowledge_base('match_cv_best_practices', cv_vector)
                 
-                # 2. Определение профессии и ключевых слов
-                detected_job = generate_ai_response(
-                    f"Return ONLY the target job title from this CV: {cv_text[:500]}",
-                    system_prompt="You are a job market expert."
-                )
+            detected_job = st.session_state.detected_job or "Specialist"
                 
-                keywords_data = supabase.table("ats_keywords").select("keyword").execute()
-                keywords_str = ", ".join([k['keyword'] for k in keywords_data.data[:20]])
+            keywords_data = supabase.table("ats_keywords").select("keyword").execute()
+            keywords_str = ", ".join([k['keyword'] for k in keywords_data.data[:20]])
 
-                # 3. ФОРМИРОВАНИЕ ГЛУБОКОГО ПРОМПТА
-                final_prompt = f"""
-                Act as a Senior Tech Recruiter. Perform a deep audit of this CV for the position of '{detected_job}'.
+            final_prompt = f"""                Act as a Senior Tech Recruiter. Perform a deep audit of this CV for the position of '{detected_job}'.
 
                 KNOWLEDGE BASE GUIDELINES:
                 {best_practices}
@@ -89,72 +86,62 @@ if uploaded_file:
                 - Concrete Improvement Actions
                 """
 
-                 # 4. Получение ответа
-                full_response = generate_ai_response(final_prompt)
+            full_response = generate_ai_response(final_prompt)
                 
-                # --- УЛУЧШЕННЫЙ ПАРСИНГ ---
-                try:
-                    # 1. Пытаемся найти JSON-объект с помощью регулярного выражения
-                    json_match = re.search(r'\{.*\}', full_response, re.DOTALL)
-                    if json_match:
-                        json_part = json_match.group(0)
-                        metrics = json.loads(json_part)
+            try:
+                json_match = re.search(r'\{.*\}', full_response, re.DOTALL)
+                if json_match:
+                    json_part = json_match.group(0)
+                    metrics = json.loads(json_part)
                         
-                        # 2. Текстовая часть — это всё, что идет после JSON или после "PART 2:"
-                        if "PART 2:" in full_response:
-                            report_part = full_response.split("PART 2:")[1].strip()
-                        else:
-                            # Если "PART 2:" нет, просто берем текст после закрывающей скобки JSON
-                            report_part = full_response[json_match.end():].strip()
+                    if "PART 2:" in full_response:
+                        report_part = full_response.split("PART 2:")[1].strip()
                     else:
-                        raise ValueError("JSON not found in response")
+                        report_part = full_response[json_match.end():].strip()
+                else:
+                    raise ValueError("JSON not found in response")
                         
-                except Exception as e:
-                    st.error(f"Error parsing metrics. Displaying raw report.")
-                    st.markdown(full_response)
-                    st.stop()
+            except Exception as e:
+                st.error(f"Error parsing metrics. Displaying raw report.")
+                st.markdown(full_response)
+                st.stop()
 
-                # 5. ОТОБРАЖЕНИЕ МЕТРИК (КАРТОЧКИ) - теперь точно сработает
-                st.divider()
-                st.subheader("📊 Screening Dashboard")
+            st.divider()
+            st.subheader("analysis results")
                 
-                m_col1, m_col2, m_col3 = st.columns(3)
+            m_col1, m_col2, m_col3 = st.columns(3)
                 
-                # Приводим данные к безопасному виду на случай, если AI ошибся в типах данных
-                status = str(metrics.get('screening_status', 'Unknown'))
-                score = metrics.get('overall_score', 0)
-                missing_list = metrics.get('missing_mandatory_sections', [])
-                weak_list = metrics.get('weak_sections', [])
+            status = str(metrics.get('screening_status', 'Unknown'))
+            score = metrics.get('overall_score', 0)
+            missing_list = metrics.get('missing_mandatory_sections', [])
+            weak_list = metrics.get('weak_sections', [])
 
-                with m_col1:
-                    status_class = "status-pass" if "Pass" in status else ("status-borderline" if "Borderline" in status else "status-reject")
-                    st.markdown(f"""<div class="metric-card">
-                        <p style="margin-bottom:0;">Pass Screening</p>
-                        <p class="{status_class}" style="margin-top:0;">{status}</p>
-                    </div>""", unsafe_allow_html=True)
+            with m_col1:
+                status_class = "status-pass" if "Pass" in status else ("status-borderline" if "Borderline" in status else "status-reject")
+                st.markdown(f"""<div class="metric-card">
+                    <p style="margin-bottom:0;">Pass Screening</p>
+                    <p class="{status_class}" style="margin-top:0;">{status}</p>
+                </div>""", unsafe_allow_html=True)
                 
-                with m_col2:
-                    st.markdown(f"""<div class="metric-card">
-                        <p style="margin-bottom:0;">Overall Quality</p>
-                        <p style="font-size: 1.5rem; font-weight: bold; margin-top:0;">{score} / 10</p>
-                    </div>""", unsafe_allow_html=True)
+            with m_col2:
+                st.markdown(f"""<div class="metric-card">
+                    <p style="margin-bottom:0;">Overall Quality</p>
+                    <p style="font-size: 1.5rem; font-weight: bold; margin-top:0;">{score} / 10</p>
+                </div>""", unsafe_allow_html=True)
                 
-                with m_col3:
-                    missed_count = len(missing_list)
-                    st.markdown(f"""<div class="metric-card">
-                        <p style="margin-bottom:0;">Missing Sections</p>
-                        <p style="color: {'#dc3545' if missed_count > 0 else '#28a745'}; font-size: 1.5rem; font-weight: bold; margin-top:0;">{missed_count}</p>
-                    </div>""", unsafe_allow_html=True)
+            with m_col3:
+                missed_count = len(missing_list)
+                st.markdown(f"""<div class="metric-card">
+                    <p style="margin-bottom:0;">Missing Sections</p>
+                    <p style="color: {'#dc3545' if missed_count > 0 else '#28a745'}; font-size: 1.5rem; font-weight: bold; margin-top:0;">{missed_count}</p>
+                </div>""", unsafe_allow_html=True)
 
-                # 6. ОШИБКИ ПО СЕКЦИЯМ
-                if missing_list or weak_list:
-                    st.write("") # Отступ
-                    with st.container():
-                        if missing_list:
-                            st.error(f"**Missing Mandatory Sections:** {', '.join(missing_list)}")
-                        if weak_list:
-                            st.warning(f"**Weak Sections:** {', '.join(weak_list)}")
+            if missing_list or weak_list:
+                st.write("") 
+                with st.container():
+                    if missing_list:
+                        st.error(f"**Missing Mandatory Sections:** {', '.join(missing_list)}")
+                    if weak_list:
+                        st.warning(f"**Weak Sections:** {', '.join(weak_list)}")
 
-                # 7. ДЕТАЛЬНЫЙ ОТЧЕТ
-                st.markdown("---")
-                st.markdown(report_part)
+            st.markdown(report_part)

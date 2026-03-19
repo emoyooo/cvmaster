@@ -18,3 +18,25 @@ def generate_ai_response(prompt: str, system_prompt: str = "You are a helpful ca
         ]
     )
     return response.choices[0].message.content
+
+def analyze_answer(question, answer, rubric=None):
+    prompt = f"""
+    Analyze this interview answer:
+    Question: {question}
+    User Answer: {answer}
+    Evaluation Rubric: {rubric if rubric else "Standard interview quality"}
+
+    Return ONLY a JSON:
+    {{
+        "rating": "Poor/Fair/Good",
+        "red_flags": ["list of flags or empty"],
+        "feedback_for_report": "short technical critique"
+    }}
+    """
+    response = generate_ai_response(prompt, system_prompt="You are an expert interviewer analyzer.")
+    try:
+        import re, json
+        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        return json.loads(json_match.group(0))
+    except:
+        return {"rating": "Fair", "red_flags": [], "feedback_for_report": "Analysis failed"}
