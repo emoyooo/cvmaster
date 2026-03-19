@@ -23,6 +23,6 @@ def get_secrets():
 
 secrets = get_secrets()
 
-OPENAI_API_KEY = secrets["OPENAI_API_KEY"]
-SUPABASE_URL = secrets["SUPABASE_URL"]
-SUPABASE_KEY = secrets["SUPABASE_KEY"]
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
